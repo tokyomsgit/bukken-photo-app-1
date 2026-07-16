@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "description": "物件写真 自動加工アプリ (Netlify版)",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0",
+    "@netlify/functions": "^2.8.2"
+  },
   "devDependencies": {
     "@netlify/edge-functions": "^2.0.0"
   }
