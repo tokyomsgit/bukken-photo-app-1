@@ -40,7 +40,7 @@
   .remove-btn { float:right; background:none; border:none; color:#c0392b; cursor:pointer; font-size:12px; }
   #processBtn { background:var(--main); color:#fff; border:none; padding:12px 24px; border-radius:8px; font-size:15px; cursor:pointer; }
   #processBtn:disabled { background:#aab6ae; cursor:not-allowed; }
-  #log { font-size:13px; color:var(--muted); margin-top:14px; white-space:pre-wrap; line-height:1.7; max-height:220px; overflow-y:auto; }
+  #log { font-size:13px; color:var(--muted); margin-top:14px; white-space:pre-wrap; line-height:1.7; max-height:220px; overflow-y:auto; word-break:break-all; }
   #warnBanner { display:none; background:#fff2d6; color:#8a6100; border:1px solid #e0c079; border-radius:8px; padding:10px 14px; font-size:13px; margin-top:14px; }
   .result-grid img { width:100%; border-radius:6px; border:1px solid var(--border); }
   .result-grid .thumb .meta { text-align:center; }
@@ -99,7 +99,7 @@
 
     <label>使用モデル</label>
     <input type="text" id="cfgModel" value="gpt-image-2">
-    <div class="hint">OpenAI APIキーはサーバー側(Netlifyの環境変数 OPENAI_API_KEY)で管理しています。ブラウザには保存されません。</div>
+    <div class="hint">OpenAI APIキーはサーバー側(Netlifyの環境変数 OPENAI_KEY_CUSTOM)で管理しています。ブラウザには保存されません。</div>
 
     <label>出力サイズ(px)</label>
     <div class="row2">
@@ -254,25 +254,6 @@ function log(msg) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-async function callAiEdit(file, prompt) {
-  const fd = new FormData();
-  fd.append('image', file, file.name);
-  fd.append('prompt', prompt);
-  fd.append('model', cfg.model);
-  const res = await fetch('/api/ai-edit', { method: 'POST', body: fd });
-  const contentType = res.headers.get('content-type') || '';
-  if (!contentType.includes('application/json')) {
-    // /api/ai-edit が呼ばれず、Netlifyの404ページ等が返ってきているケース
-    throw new Error(`AI加工エンドポイントに到達できませんでした(status ${res.status})。Edge Functionが未デプロイの可能性があります。`);
-  }
-  const data = await res.json();
-  if (!res.ok || data.error) {
-    const debugStr = data.debug ? ` [debug: ${JSON.stringify(data.debug)}]` : '';
-    throw new Error((data.error || `HTTP ${res.status}`) + debugStr);
-  }
-  return data.b64_json;
-}
-
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -289,6 +270,75 @@ function fileToDataUrl(file) {
     r.onerror = reject;
     r.readAsDataURL(file);
   });
+}
+
+// AIに送る前に画像を十分小さく圧縮する(送信量を減らし、生成時間もなるべく短くするため)
+async function shrinkForAi(file, maxDim = 1024, startQuality = 0.7, targetBytes = 250000) {
+  const dataUrl = await fileToDataUrl(file);
+  const img = await loadImage(dataUrl);
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+
+  let quality = startQuality;
+  let blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+  let attempts = 0;
+  while (blob.size > targetBytes && attempts < 4) {
+    quality = Math.max(0.35, quality - 0.15);
+    blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+    attempts++;
+  }
+  return blob;
+}
+
+// AI加工はバックグラウンド方式(ジョブ投入→ポーリング)で行う。
+// OpenAIの画像生成には数十秒〜100秒以上かかることがあり、通常のリクエストのままだと
+// Netlify側のタイムアウトに引っかかって失敗することがあったため、この方式に変更している。
+// 1. /api/ai-process-background にジョブを投入(Background Function、最大15分実行可能)
+// 2. /api/ai-status を定期的にポーリングして完了を待つ
+async function callAiEdit(file, prompt, onProgress) {
+  const shrunk = await shrinkForAi(file);
+  const dataUrl = await fileToDataUrl(shrunk);
+  const jobId = crypto.randomUUID();
+
+  const startRes = await fetch('/api/ai-process-background', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jobId, imageBase64: dataUrl, prompt, model: cfg.model }),
+  });
+  if (!(startRes.status === 202 || startRes.ok)) {
+    throw new Error(`AI加工の開始に失敗しました(status ${startRes.status})。`);
+  }
+
+  const maxWaitMs = 4 * 60 * 1000; // 最大4分待つ
+  const intervalMs = 4000;
+  const startedAt = Date.now();
+  let lastLoggedSec = 0;
+
+  while (Date.now() - startedAt < maxWaitMs) {
+    await new Promise(r => setTimeout(r, intervalMs));
+    let data;
+    try {
+      const res = await fetch(`/api/ai-status?jobId=${encodeURIComponent(jobId)}`);
+      data = await res.json();
+    } catch {
+      continue; // 一時的な通信エラーはポーリングを続けて様子を見る
+    }
+    if (data.status === 'done') return data.b64_json;
+    if (data.status === 'error') throw new Error(data.error || 'AI加工に失敗しました。');
+
+    const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+    if (onProgress && elapsedSec - lastLoggedSec >= 15) {
+      lastLoggedSec = elapsedSec;
+      onProgress(elapsedSec);
+    }
+  }
+  throw new Error('AI加工がタイムアウトしました(4分待っても完了しませんでした)。');
 }
 
 function drawCover(ctx, img, dw, dh) {
@@ -363,7 +413,9 @@ processBtn.addEventListener('click', async () => {
     try {
       if (item.tag === 'main' || item.tag === 'sky') {
         const prompt = item.tag === 'main' ? cfg.stagingPrompt : cfg.skyPrompt;
-        const b64 = await callAiEdit(item.file, prompt);
+        const b64 = await callAiEdit(item.file, prompt, (elapsedSec) => {
+          log(`${item.file.name}: ${label} 生成中…(${elapsedSec}秒経過)`);
+        });
         sourceImg = await loadImage(`data:image/png;base64,${b64}`);
         log(`${item.file.name}: ${label} 完了`);
       } else {
@@ -385,7 +437,7 @@ processBtn.addEventListener('click', async () => {
 
   if (failCount > 0) {
     warnBanner.style.display = 'block';
-    warnBanner.textContent = `⚠ ${failCount}枚でAI加工が失敗し、元画像のまま処理されました。上のログにエラー内容が出ています。「Edge Functionが未デプロイ」と出ている場合は、Netlify CLIまたはGit連携でのデプロイが必要です(ドラッグ&ドロップ配布ではAI加工機能が動きません)。`;
+    warnBanner.textContent = `⚠ ${failCount}枚でAI加工が失敗し、元画像のまま処理されました。上のログにエラー内容が出ています。`;
   }
 
   showResults();
