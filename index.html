@@ -4,9 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>物件写真 自動加工アプリ(Netlify版)</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<!-- build: furniture-prompts-v3 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@700&display=swap">
 <style>
   :root {
     --main: #2f6f4f;
@@ -26,9 +30,9 @@
   #dropzone { border:2px dashed #b7c3ba; border-radius:10px; padding:40px 20px; text-align:center; color:var(--muted); cursor:pointer; }
   #dropzone.dragover { background:#eef5f0; border-color:var(--main); }
   #fileInput { display:none; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px; margin-top:16px; }
-  .thumb { border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#fff; }
-  .thumb img { width:100%; height:110px; object-fit:cover; display:block; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; margin-top:16px; }
+  .thumb { border:1px solid var(--border); border-radius:8px; overflow:visible; background:#fff; }
+  .thumb img { width:100%; height:110px; object-fit:cover; display:block; border-radius:8px 8px 0 0; }
   .thumb .meta { padding:8px; font-size:12px; }
   .thumb .fname { color:var(--muted); word-break:break-all; margin-bottom:6px; height:2.4em; overflow:hidden; }
   .tagrow { display:flex; gap:4px; flex-wrap:wrap; }
@@ -37,10 +41,18 @@
   .tag-main:has(input:checked) { background:#ffe9c7; border-color:#e0a94a; }
   .tag-sky:has(input:checked) { background:#d9ecff; border-color:#6fa8dc; }
   .tag-none:has(input:checked) { background:#eee; }
+  .subtagrow { display:none; gap:4px; flex-wrap:wrap; margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); }
+  .subtagrow.show { display:flex; }
+  .subtagrow label { font-size:11px; border:1px solid var(--border); border-radius:5px; padding:3px 6px; cursor:pointer; }
+  .subtagrow input { display:none; }
+  .tag-furn1:has(input:checked) { background:#e8f5e9; border-color:#66bb6a; }
+  .tag-furn2:has(input:checked) { background:#e3f2fd; border-color:#64b5f6; }
+  .tag-furn3:has(input:checked) { background:#fff3e0; border-color:#ffb74d; }
+  .tag-furn-clear:has(input:checked) { background:#fce4ec; border-color:#f06292; }
   .remove-btn { float:right; background:none; border:none; color:#c0392b; cursor:pointer; font-size:12px; }
   #processBtn { background:var(--main); color:#fff; border:none; padding:12px 24px; border-radius:8px; font-size:15px; cursor:pointer; }
   #processBtn:disabled { background:#aab6ae; cursor:not-allowed; }
-  #log { font-size:13px; color:var(--muted); margin-top:14px; white-space:pre-wrap; line-height:1.7; max-height:220px; overflow-y:auto; }
+  #log { font-size:13px; color:var(--muted); margin-top:14px; white-space:pre-wrap; line-height:1.7; max-height:220px; overflow-y:auto; word-break:break-all; }
   #warnBanner { display:none; background:#fff2d6; color:#8a6100; border:1px solid #e0c079; border-radius:8px; padding:10px 14px; font-size:13px; margin-top:14px; }
   .result-grid img { width:100%; border-radius:6px; border:1px solid var(--border); }
   .result-grid .thumb .meta { text-align:center; }
@@ -52,7 +64,7 @@
   #settingsModal h2 { margin-top:0; font-size:16px; }
   #settingsModal label { display:block; font-size:13px; margin:14px 0 4px; color:var(--muted); }
   #settingsModal input[type=text], #settingsModal input[type=number], #settingsModal input[type=color] { width:100%; padding:8px; border:1px solid var(--border); border-radius:6px; font-size:13px; }
-  #settingsModal textarea { width:100%; height:110px; padding:8px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-family:inherit; }
+  #settingsModal textarea { width:100%; height:220px; padding:8px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-family:inherit; }
   .row2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
   .modal-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
@@ -99,7 +111,7 @@
 
     <label>使用モデル</label>
     <input type="text" id="cfgModel" value="gpt-image-2">
-    <div class="hint">OpenAI APIキーはサーバー側(Netlifyの環境変数 OPENAI_API_KEY)で管理しています。ブラウザには保存されません。</div>
+    <div class="hint">OpenAI APIキーはサーバー側(Netlifyの環境変数 OPENAI_KEY_CUSTOM)で管理しています。ブラウザには保存されません。</div>
 
     <label>出力サイズ(px)</label>
     <div class="row2">
@@ -138,9 +150,19 @@
 
     <label>青空加工プロンプト</label>
     <textarea id="cfgSkyPrompt"></textarea>
+    <div class="hint">空だけを実写の青空に差し替え、建物の写真質感は維持する指定になっています。</div>
 
-    <label>ホームステージングプロンプト</label>
-    <textarea id="cfgStagingPrompt"></textarea>
+    <label>家具入れ①プロンプト（ソファ＋ダイニングテーブル）</label>
+    <textarea id="cfgFurn1Prompt"></textarea>
+
+    <label>家具入れ➁プロンプト（ソファのみ）</label>
+    <textarea id="cfgFurn2Prompt"></textarea>
+
+    <label>家具入れ③プロンプト（ダイニングテーブルのみ）</label>
+    <textarea id="cfgFurn3Prompt"></textarea>
+
+    <label>家具消しプロンプト（ラグ・壁絵・観葉植物2つ）</label>
+    <textarea id="cfgFurnClearPrompt"></textarea>
 
     <div class="modal-actions">
       <button class="btn-secondary" id="closeSettings">閉じる</button>
@@ -152,6 +174,27 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 const DEFAULT_SKY_PROMPT = `#目的
+これは実在の不動産写真です。建物・構図・遠近感・窓・外壁の質感は一切変えず、空だけを本物の晴天の青空に置き換えてください。
+photorealistic, real photograph, taken on a real camera, professional real-estate photography.
+
+#変更してよい範囲
+・空（と空が映り込むガラスのごく弱い反射）だけ。
+・日本の夏の午前の、実写として自然な青空。薄い白い雲は少量なら可。
+・彩度は上げすぎない。空は鮮やかすぎるCG青ではなく、実写の青空にする。
+
+#必ず維持
+・マンションの形状・階数・外観・バルコニー・道路・植栽・駐車場・自転車置き場・電線・看板
+・元写真のレンズ感、粒子、シャープネス、色温度、外壁の汚れや目地、窓の反射
+・建物全体を別の照明で描き直さない。影の位置を大きく動かさない
+
+#禁止
+・illustration, painting, anime, cartoon, CGI, 3D render, painterly, plastic, oversaturated
+・のっぺりしたグラデーション空、塗り直し、再構成、美肌のような平滑化
+・「この画像はイメージです」等の文字・ロゴ・透かしを画像内に入れない`;
+
+const SKY_PROMPT_REVISION = 2;
+const LEGACY_SKY_PROMPTS = [
+  `#目的
 元画像のマンションの形状・構図・階数・外観・バルコニー・周辺の道路・植栽・駐車場・自転車置き場はそのまま維持し、天気だけを夏の晴天に変更してください。
 #前提
 ・空は鮮やかな青空にし、草木があれば鮮やかな色に。
@@ -159,19 +202,644 @@ const DEFAULT_SKY_PROMPT = `#目的
 ・外壁とバルコニーに自然な明るさと清潔感を出し、建物・地面・植栽にも晴れた日に合う光を反映させてください。
 ・影は適度に出し、立体感はあるが強すぎない自然な影にしてください。
 ・曇天のような暗さはなくし、合成感のない自然な晴れの日のマンション写真に仕上げてください。
-・この画像はイメージです等の注意書きを画像内に入れないでください`;
+・この画像はイメージです等の注意書きを画像内に入れないでください`,
+];
 
-const DEFAULT_STAGING_PROMPT = `#目的
-ユーザーが提供した部屋の画像に適した家具を入れて
-#前提
-・ミニマルな家具
-・この画像はイメージです等の注意書きを画像内に入れないでください
-#必ず入れる家具
-・絵画
+const DEFAULT_FURN1_PROMPT = `あなたは、不動産広告用の室内画像編集に特化したホームステージング担当です。
+
+添付した室内画像に、ソファとダイニングテーブルを自然に配置し、SUUMO広告掲載用のホームステージング画像として仕上げてください。
+
+【編集目的】
+
+空室の室内に家具を配置することで、購入検討者が実際の生活を具体的に想像できる、清潔感・開放感・信頼感のある室内写真にしてください。
+
+単に家具を置くだけではなく、実際に人が生活することを想定し、部屋の広さ、形状、キッチン、窓、扉、収納、通路などを確認したうえで、最も自然で使いやすい配置を判断してください。
+
+【最重要条件】
+
+以下の条件は必ず守ってください。
+
+・部屋の形、大きさ、奥行き、天井高、角度、構図は一切変更しないでください。
+・元画像のカメラ位置、撮影方向、画角、遠近感、パースは変更しないでください。
+・ズームイン、ズームアウト、トリミング、画像の拡張はしないでください。
+・窓、扉、引き戸、間仕切り、収納、キッチン、柱、梁、下がり天井、カーテンレール、エアコン、照明、スイッチ、コンセントなど、元画像に写っている既存の構造物や設備は消さないでください。
+・既存設備の位置、大きさ、形、色、素材を変更しないでください。
+・壁、床、天井の色や素材を変更しないでください。
+・元画像に存在しない窓、扉、壁、部屋、照明設備、造作設備を追加しないでください。
+・部屋を実際より広く見せるために、家具を極端に小さくしないでください。
+・不自然な広角表現や、元画像より奥行きが広がったような加工はしないでください。
+・元画像の室内に、家具だけを自然に追加したように見える仕上がりにしてください。
+
+【配置する家具】
+
+必ず以下を配置してください。
+
+・ソファ
+・ダイニングテーブル
+・ダイニングチェア
+
+必要に応じて、以下を少量のみ追加して構いません。
+
+・小型のローテーブル
+・小さめのラグ
 ・観葉植物
+・クッション
+・控えめなインテリア小物
+
+ただし、家具や小物を置きすぎず、主役はソファとダイニングテーブルにしてください。
+
+テレビ、テレビ台、ベッド、デスク、大型収納家具は、追加指示がない限り配置しないでください。
+
+【ソファの配置条件】
+
+・ソファは、部屋の広さに合った現実的な2人掛けから2.5人掛け程度を基本としてください。
+・実際に大人が座って使用できる寸法にしてください。
+・極端に小さいソファや、座面が不自然に浅いソファは使用しないでください。
+・窓、扉、収納、間仕切りの開閉を妨げない位置に配置してください。
+・通路を塞がず、実際に人がソファの前後や横を通れるようにしてください。
+・壁に沿わせる場合も、壁や設備に食い込ませないでください。
+・ソファの脚や背もたれが、壁、扉、間仕切り、収納と重ならないようにしてください。
+・室内全体のバランスを見て、最も自然なくつろぎ空間になる向きで配置してください。
+・テレビがない場合でも、不自然な方向を向かないようにしてください。
+・カメラ手前に置く場合は、部屋が狭く見えない範囲で、必要に応じてごく自然に一部を見切れさせても構いません。
+・見切れさせる場合も、ソファの大部分が画面外に出ないようにしてください。
+
+【ダイニングテーブルの配置条件】
+
+・ダイニングテーブルは、実際に食事ができる現実的なサイズにしてください。
+・部屋の広さに応じて、2人用から4人用程度のサイズを判断してください。
+・人間が椅子に座り、椅子を後ろに引けるスペースを確保してください。
+・椅子はテーブルに不自然に食い込ませず、座席ごとの間隔を自然にしてください。
+・キッチンのすぐ前を塞がないでください。
+・調理、配膳、冷蔵庫の使用、収納扉の開閉ができるスペースを確保してください。
+・キッチンとダイニングテーブルの間には、人が立って料理や通行ができる十分な距離を確保してください。
+・ダイニングテーブルを壁、扉、収納、キッチン設備に食い込ませないでください。
+・部屋を広く見せるために、実用できないほど小さいテーブルにはしないでください。
+・ソファとダイニングテーブルの両方を配置しても、窮屈に見えない位置とサイズを選んでください。
+
+【生活動線】
+
+家具を配置する前に、以下を確認してください。
+
+・玄関側から室内への通路
+・キッチン前の作業スペース
+・窓やバルコニーへの移動経路
+・扉や引き戸の開閉範囲
+・収納扉の開閉範囲
+・隣室への移動経路
+・ソファとダイニング間の移動経路
+
+家具は、これらの動線を妨げないように配置してください。
+
+見た目だけを優先して、キッチンが使えない、扉が閉まらない、通路が通れないといった配置にはしないでください。
+
+【インテリアデザイン】
+
+・北欧風、ミニマル、ホテルライクを基調にしてください。
+・木目、ホワイト、ベージュ、グレージュ、ライトグレーなど、万人受けする落ち着いた色を中心にしてください。
+・元画像の床や壁の色に自然に調和する家具を選んでください。
+・派手な原色、奇抜な形、過度に個性的な家具は避けてください。
+・清潔感があり、明るく、上品で、住みやすそうな印象にしてください。
+・モデルルームのように整えつつも、過剰な装飾や非現実的な演出は避けてください。
+・生活感は控えめにし、SUUMO広告として幅広い購入検討者に好まれるデザインにしてください。
+
+【合成品質】
+
+・家具のパース、向き、縮尺を元画像の空間に正確に合わせてください。
+・家具が床面に正しく接地しているようにしてください。
+・家具が浮いたり、床に沈んだりしないようにしてください。
+・家具の脚やテーブルの脚を不自然に欠損させないでください。
+・光の方向、明るさ、影の濃さ、色温度を元画像に合わせてください。
+・家具だけが不自然に鮮明、暗い、明るい状態にならないようにしてください。
+・壁や床との境界を自然にし、切り抜きを貼り付けたような合成感をなくしてください。
+・家具同士が重なったり、壁や設備を貫通したりしないようにしてください。
+
+【SUUMO広告用としての仕上がり】
+
+最終画像は、以下の条件を満たしてください。
+
+・元画像と同じ部屋であることが明確に分かる
+・部屋の形、広さ、設備、窓、扉が正確に維持されている
+・ソファとダイニングテーブルの両方が自然に配置されている
+・家具のサイズが現実的である
+・実際に人が生活できる動線が確保されている
+・キッチン、収納、扉、間仕切りが問題なく使える
+・部屋が清潔で明るく、住みやすそうに見える
+・実物以上に広く見せる誇張がない
+・SUUMO広告に掲載しても違和感のない、自然で信頼感のある画像になっている
+
+【最終確認】
+
+画像を生成する前に、以下を内部で確認してください。
+
+1. 部屋の形や構図を変更していないか
+2. 窓、扉、設備、間仕切り、レールを消していないか
+3. ソファが現実的なサイズか
+4. ダイニングテーブルが実際に使用できるサイズか
+5. キッチン前の作業スペースが確保されているか
+6. 扉や収納の開閉を妨げていないか
+7. 人が通れる生活動線が確保されているか
+8. 家具が壁や設備に食い込んでいないか
+9. 家具のパース、接地、影が自然か
+10. SUUMO広告として誇張のない仕上がりか
+
+上記をすべて満たしたうえで、説明文を返すのではなく、室内画像の編集結果を生成してください。`;
+
+const DEFAULT_FURN2_PROMPT = `あなたは、不動産広告用の室内画像編集に特化したホームステージング担当です。
+
+添付した室内画像にソファを自然に配置し、SUUMO広告掲載用のホームステージング画像として仕上げてください。
+
+この編集では、ダイニングテーブルやダイニングチェアは配置せず、ソファを中心とした、広がりとくつろぎを感じられるリビング空間を作ってください。
+
+【編集目的】
+
+空室の室内にソファを配置し、購入検討者が実際にくつろいで生活する様子を想像できる、清潔感・開放感・信頼感のある室内写真にしてください。
+
+単にソファを置くだけではなく、部屋の形状、広さ、窓、扉、収納、キッチン、間仕切り、通路を確認し、実際の生活動線が成立する位置を判断してください。
+
+【最重要条件】
+
+以下の条件は必ず守ってください。
+
+・部屋の形、大きさ、奥行き、天井高、角度、構図は一切変更しないでください。
+・元画像のカメラ位置、撮影方向、画角、遠近感、パースを変更しないでください。
+・ズームイン、ズームアウト、トリミング、画像の拡張はしないでください。
+・窓、扉、引き戸、間仕切り、収納、キッチン、柱、梁、下がり天井、カーテンレール、エアコン、照明、スイッチ、コンセントなど、元画像の既存設備や構造物は消さないでください。
+・既存設備の位置、大きさ、形、色、素材を変更しないでください。
+・壁、床、天井の色や素材を変更しないでください。
+・元画像に存在しない窓、扉、壁、部屋、設備を追加しないでください。
+・部屋を広く見せるために、室内の形を変更したり、ソファを不自然に小さくしたりしないでください。
+・元画像の室内に、ソファだけを自然に追加したように見える仕上がりにしてください。
+
+【配置する家具】
+
+必ず以下を配置してください。
+
+・ソファ
+
+必要に応じて、以下を少量のみ追加して構いません。
+
+・小型のローテーブル
+・小さめのラグ
+・観葉植物
+・クッション
 ・フロアランプ
-・ラグ
-・ソファー`;
+・控えめなインテリア小物
+
+ただし、ソファが主役になるようにしてください。
+
+ダイニングテーブル、ダイニングチェア、テレビ、テレビ台、ベッド、デスク、大型収納家具は、追加指示がない限り配置しないでください。
+
+【ソファのサイズ】
+
+・部屋の広さに合った、現実的な2人掛けから2.5人掛け程度を基本にしてください。
+・実際に大人が座れる十分な座面幅と奥行きを確保してください。
+・極端に小さいソファや、模型のようなサイズにはしないでください。
+・部屋に対して大きすぎて通路を塞ぐソファは使用しないでください。
+・家具を小さくして部屋を実際以上に広く見せる演出はしないでください。
+・背もたれ、座面、肘掛け、脚の比率が自然なソファにしてください。
+
+【ソファの配置】
+
+・窓、扉、収納、間仕切り、キッチン、通路の位置を確認し、最も自然な場所に配置してください。
+・扉や引き戸の開閉範囲を塞がないでください。
+・収納扉を開けるスペースを残してください。
+・窓やバルコニーへの移動経路を塞がないでください。
+・キッチン前の作業スペースや通路を圧迫しないでください。
+・隣室との間仕切りやレールの上に配置しないでください。
+・ソファを壁に沿わせる場合は、壁に正しく平行に配置してください。
+・ソファを壁や設備に食い込ませないでください。
+・部屋の形状に対して斜めで不自然な向きにしないでください。
+・テレビを置かないため、テレビの方向だけを意識した不自然な配置にしないでください。
+・部屋全体を見て、くつろぎ空間として最も自然な向きにしてください。
+・カメラ手前に配置する場合は、必要に応じてソファの一部を少しだけ見切れさせても構いません。
+・見切れさせる場合も、ソファの向きを変えず、画面外に出しすぎず、部屋が狭く見えない範囲にしてください。
+
+【生活動線】
+
+家具を配置する前に、以下を確認してください。
+
+・室内入口から奥への通路
+・キッチン前の作業スペース
+・窓やバルコニーへの移動経路
+・扉や引き戸の開閉範囲
+・収納扉の開閉範囲
+・隣室への移動経路
+・ソファ周辺を人が歩ける空間
+
+ソファや小物によって、これらを塞がないでください。
+
+見た目を優先して、扉が閉まらない、収納が使えない、キッチンに立てない、通路を歩けない配置にはしないでください。
+
+【インテリアデザイン】
+
+・北欧風、ミニマル、ホテルライクを基調にしてください。
+・木目、ホワイト、ベージュ、グレージュ、ライトグレーなど、万人受けする落ち着いた色を中心にしてください。
+・元画像の壁や床の色に自然に調和するソファを選んでください。
+・派手な原色、奇抜な形、過度に個性的な家具は避けてください。
+・明るく、清潔感があり、落ち着いてくつろげる印象にしてください。
+・モデルルームのように整えつつ、過度な装飾は避けてください。
+・生活感は控えめにし、購入検討者が自分の生活を想像しやすい空間にしてください。
+
+【ローテーブルやラグを追加する場合】
+
+・ソファとの距離を自然にしてください。
+・人がソファに座ったり立ったりできるスペースを確保してください。
+・ローテーブルを通路の中央に置かないでください。
+・ローテーブルは大きすぎず、小さすぎず、実用できるサイズにしてください。
+・ラグは部屋全体を覆うほど大きくしないでください。
+・ラグはソファ周辺を自然にまとめる程度のサイズにしてください。
+・ラグやテーブルによって扉や通路を塞がないでください。
+
+【合成品質】
+
+・ソファの向き、縮尺、パースを元画像に正確に合わせてください。
+・ソファが床に正しく接地しているようにしてください。
+・ソファが浮いたり、床に沈んだりしないようにしてください。
+・脚、肘掛け、背もたれを不自然に欠損させないでください。
+・光の方向、明るさ、影の濃さ、色温度を元画像に合わせてください。
+・ソファだけが不自然に鮮明、暗い、明るい状態にならないようにしてください。
+・壁や床との境界を自然にし、貼り付けたような合成感をなくしてください。
+・ソファが壁、柱、扉、設備を貫通しないようにしてください。
+
+【SUUMO広告用としての仕上がり】
+
+最終画像は、以下の条件を満たしてください。
+
+・元画像と同じ部屋であることが明確に分かる
+・部屋の形、広さ、設備、窓、扉が正確に維持されている
+・ダイニングテーブルが配置されていない
+・ソファが自然で現実的なサイズで配置されている
+・生活動線が確保されている
+・扉、収納、間仕切り、キッチンが問題なく使える
+・室内が広く、清潔で、くつろぎやすそうに見える
+・実物以上に広く見せる誇張がない
+・SUUMO広告に掲載しても違和感のない、自然で信頼感のある画像になっている
+
+【最終確認】
+
+画像を生成する前に、以下を内部で確認してください。
+
+1. 部屋の形や構図を変更していないか
+2. 窓、扉、設備、間仕切り、レールを消していないか
+3. ダイニングテーブルを配置していないか
+4. ソファが現実的なサイズか
+5. ソファの向きが不自然ではないか
+6. キッチンや通路を塞いでいないか
+7. 扉や収納の開閉を妨げていないか
+8. ソファが壁や設備に食い込んでいないか
+9. ソファのパース、接地、影が自然か
+10. SUUMO広告として誇張のない仕上がりか
+
+上記をすべて満たしたうえで、説明文を返すのではなく、室内画像の編集結果を生成してください。`;
+
+const DEFAULT_FURN3_PROMPT = `あなたは、不動産広告用の室内画像編集に特化したホームステージング担当です。
+
+添付した室内画像にダイニングテーブルを自然に配置し、SUUMO広告掲載用のホームステージング画像として仕上げてください。
+
+この編集ではソファを配置せず、ダイニングテーブルを中心とした、食事や作業がしやすい、すっきりした生活空間を作ってください。
+
+【編集目的】
+
+空室の室内にダイニングテーブルを配置し、購入検討者が食事、在宅作業、家族や来客との時間を具体的に想像できる、清潔感・開放感・信頼感のある室内写真にしてください。
+
+単にテーブルを置くだけではなく、部屋の形状、広さ、キッチン、窓、扉、収納、間仕切り、通路を確認し、実際に人が座って使用できる位置とサイズを判断してください。
+
+【最重要条件】
+
+以下の条件は必ず守ってください。
+
+・部屋の形、大きさ、奥行き、天井高、角度、構図は一切変更しないでください。
+・元画像のカメラ位置、撮影方向、画角、遠近感、パースを変更しないでください。
+・ズームイン、ズームアウト、トリミング、画像の拡張はしないでください。
+・窓、扉、引き戸、間仕切り、収納、キッチン、柱、梁、下がり天井、カーテンレール、エアコン、照明、スイッチ、コンセントなど、元画像の既存設備や構造物は消さないでください。
+・既存設備の位置、大きさ、形、色、素材を変更しないでください。
+・壁、床、天井の色や素材を変更しないでください。
+・元画像に存在しない窓、扉、壁、部屋、設備を追加しないでください。
+・部屋を実際より広く見せるために、テーブルや椅子を不自然に小さくしないでください。
+・元画像の室内に、ダイニングテーブルだけを自然に追加したように見える仕上がりにしてください。
+
+【配置する家具】
+
+必ず以下を配置してください。
+
+・ダイニングテーブル
+・ダイニングチェア
+
+必要に応じて、以下を少量のみ追加して構いません。
+
+・観葉植物
+・テーブル上の控えめな小物
+・小型のインテリア小物
+
+ただし、ダイニングテーブルを主役にしてください。
+
+ソファ、ローテーブル、テレビ、テレビ台、ベッド、デスク、大型収納家具は、追加指示がない限り配置しないでください。
+
+【ダイニングテーブルのサイズ】
+
+・実際に人が食事や作業に使用できる、現実的なサイズにしてください。
+・部屋の広さに応じて、2人用から4人用程度を基本に判断してください。
+・小さすぎるカフェテーブルや、模型のようなサイズにはしないでください。
+・大人が皿や飲み物を置き、食事ができる天板サイズを確保してください。
+・部屋に対して大きすぎて、通路やキッチンを塞ぐテーブルは使用しないでください。
+・テーブルの高さ、天板の厚み、脚の太さを自然な比率にしてください。
+・部屋を広く見せるために、実用できない大きさへ縮小しないでください。
+
+【ダイニングチェア】
+
+・テーブルサイズに合った椅子を配置してください。
+・椅子の数は、部屋の広さとテーブルサイズに合わせて自然に判断してください。
+・椅子をテーブルに食い込ませないでください。
+・人が座れる幅と奥行きを確保してください。
+・椅子を後ろに引くスペースを確保してください。
+・椅子同士を詰め込みすぎないでください。
+・必要以上に多くの椅子を配置しないでください。
+・狭い空間に無理に4脚や6脚を置かず、現実的な人数設定にしてください。
+
+【配置位置】
+
+・キッチンとの位置関係を重視してください。
+・調理後に配膳しやすい位置に配置してください。
+・キッチンから近すぎて、調理や通行ができなくなる配置は避けてください。
+・キッチン前には、人が立って料理や作業ができる十分なスペースを確保してください。
+・冷蔵庫、引き出し、収納扉、食器棚などの使用を妨げないでください。
+・テーブルや椅子で、扉、引き戸、間仕切り、収納の開閉範囲を塞がないでください。
+・窓やバルコニーへの移動経路を確保してください。
+・隣室への通路を塞がないでください。
+・テーブルを壁、キッチン、扉、収納に食い込ませないでください。
+・壁に寄せる場合でも、椅子に座れる距離を確保してください。
+・部屋の形状に対して斜めで不自然な配置にせず、室内のラインに沿った自然な向きにしてください。
+
+【生活動線】
+
+家具を配置する前に、以下を確認してください。
+
+・室内入口から奥への通路
+・キッチン前の作業スペース
+・キッチンからダイニングへの配膳動線
+・窓やバルコニーへの移動経路
+・扉や引き戸の開閉範囲
+・収納扉の開閉範囲
+・隣室への移動経路
+・椅子を引いて座るためのスペース
+
+ダイニングテーブルや椅子によって、これらを塞がないでください。
+
+見た目を優先して、キッチンが使えない、椅子に座れない、扉が閉まらない、収納が開かない配置にはしないでください。
+
+【インテリアデザイン】
+
+・北欧風、ミニマル、ホテルライクを基調にしてください。
+・木目、ホワイト、ベージュ、グレージュ、ライトグレーなど、万人受けする落ち着いた色を中心にしてください。
+・元画像の壁や床の色に自然に調和するテーブルと椅子を選んでください。
+・派手な原色、奇抜な形、過度に個性的な家具は避けてください。
+・明るく、清潔感があり、食事や作業がしやすそうな印象にしてください。
+・モデルルームのように整えつつ、過度な装飾は避けてください。
+・生活感は控えめにし、購入検討者が自分の暮らしを想像しやすい空間にしてください。
+
+【テーブル上の小物】
+
+小物を置く場合は、以下を守ってください。
+
+・置きすぎないでください。
+・花瓶、小さな植物、食器などを1点から数点程度にしてください。
+・テーブル面の大部分を隠さないでください。
+・食事や作業ができないほど物を並べないでください。
+・派手な装飾や季節感の強すぎる小物は避けてください。
+・SUUMO広告として万人受けする、清潔で控えめな演出にしてください。
+
+【合成品質】
+
+・テーブルと椅子の向き、縮尺、パースを元画像に正確に合わせてください。
+・テーブルや椅子が床に正しく接地しているようにしてください。
+・家具が浮いたり、床に沈んだりしないようにしてください。
+・テーブル脚や椅子脚を不自然に欠損させないでください。
+・光の方向、明るさ、影の濃さ、色温度を元画像に合わせてください。
+・家具だけが不自然に鮮明、暗い、明るい状態にならないようにしてください。
+・壁や床との境界を自然にし、貼り付けたような合成感をなくしてください。
+・家具同士や家具と設備が重なったり、貫通したりしないようにしてください。
+
+【SUUMO広告用としての仕上がり】
+
+最終画像は、以下の条件を満たしてください。
+
+・元画像と同じ部屋であることが明確に分かる
+・部屋の形、広さ、設備、窓、扉が正確に維持されている
+・ソファが配置されていない
+・ダイニングテーブルと椅子が自然で現実的なサイズで配置されている
+・実際に座って食事や作業ができる
+・キッチン、収納、扉、間仕切りが問題なく使える
+・生活動線と椅子を引くスペースが確保されている
+・室内が明るく、清潔で、使いやすそうに見える
+・実物以上に広く見せる誇張がない
+・SUUMO広告に掲載しても違和感のない、自然で信頼感のある画像になっている
+
+【最終確認】
+
+画像を生成する前に、以下を内部で確認してください。
+
+1. 部屋の形や構図を変更していないか
+2. 窓、扉、設備、間仕切り、レールを消していないか
+3. ソファを配置していないか
+4. ダイニングテーブルが現実的なサイズか
+5. 椅子が実際に使用できるサイズと配置か
+6. 椅子を引くスペースが確保されているか
+7. キッチン前の作業スペースが確保されているか
+8. 扉や収納の開閉を妨げていないか
+9. 家具が壁や設備に食い込んでいないか
+10. 家具のパース、接地、影が自然か
+11. SUUMO広告として誇張のない仕上がりか
+
+上記をすべて満たしたうえで、説明文を返すのではなく、室内画像の編集結果を生成してください。`;
+
+const DEFAULT_FURN_CLEAR_PROMPT = `あなたは、不動産広告用の室内画像編集に特化したホームステージング担当です。
+
+添付した室内画像を、SUUMO広告掲載用として自然で魅力的な室内画像に編集してください。
+
+【今回の編集内容】
+この画像に対して、以下を行ってください。
+
+1. 室内に置かれている家具をすべて消す
+2. 家具を消した後、ラグを1枚自然に敷く
+3. 壁に絵を1点自然に飾る
+4. 観葉植物を2つ自然に配置する
+
+目的は、家具がないすっきりした空間に、最小限の演出だけを加え、清潔感・上品さ・生活イメージを感じられるSUUMO広告向け画像に仕上げることです。
+
+--------------------------------------------------
+【最重要ルール：絶対厳守】
+
+以下は必ず守ってください。
+
+■ 部屋そのものについて
+- 部屋の形、大きさ、奥行き、角度、構図は一切変更しないこと。
+- カメラ位置、撮影方向、画角、遠近感、パースを変更しないこと。
+- ズームイン・ズームアウトをしないこと。
+- トリミングや画像拡張をしないこと。
+- 室内を実際より広く見せるための誇張表現をしないこと。
+
+■ 残すものについて
+- 窓、サッシ、カーテンレール、扉、引き戸、収納扉、キッチン、洗面台、浴室扉、トイレ扉、柱、梁、下がり天井、巾木、幅木、コンセント、スイッチ、エアコン、照明器具、給気口、間仕切り、レールなど、元画像に写っている既存設備・建具・構造物は消さないこと。
+- 壁、床、天井の色・素材・質感は変更しないこと。
+- 元画像の窓位置、扉位置、設備位置は一切変えないこと。
+- 元画像に存在しない新しい窓、扉、部屋、設備、照明、装飾を過剰に追加しないこと。
+
+--------------------------------------------------
+【最初に行う作業：家具をすべて消す】
+
+室内に置かれている家具はすべて消してください。
+
+■ 消去対象
+- ソファ
+- ダイニングテーブル
+- 椅子
+- ローテーブル
+- テレビ
+- テレビ台
+- ベッド
+- サイドテーブル
+- デスク
+- 棚
+- ラック
+- チェスト
+- 収納家具
+- スツール
+- ラグ
+- マット
+- クッション
+- 観葉植物
+- 小物類
+- 室内演出用の置き家具や装飾物
+
+※ ただし、建物に付属する設備や造り付け設備は消さないこと。
+※ たとえば、キッチン、造り付け収納、洗面台、固定棚、エアコン、既存照明、扉などは残すこと。
+
+■ 家具消しの仕上がり条件
+- 家具を消した跡が残らないこと。
+- 家具があった場所の床、壁、巾木、コーナー、窓下、壁際などを自然に補完すること。
+- 家具の影、輪郭、切り抜き跡、色ムラ、不自然なぼかしを残さないこと。
+- 家具が最初から無かったような自然な空室に見せること。
+- 床材の木目、色、質感、目地、方向、遠近感を周囲に合わせて自然に補完すること。
+- 壁の色味や質感も自然につなげること。
+
+--------------------------------------------------
+【家具を消した後に追加するもの】
+
+家具を消したあとは、以下の3要素だけを自然に追加してください。
+
+==============================
+① ラグを敷く
+==============================
+- ラグは1枚だけ配置してください。
+- ラグは空間に対して大きすぎず小さすぎない、現実的なサイズにしてください。
+- 部屋を狭く見せない、すっきりしたサイズ感にしてください。
+- テイストは北欧風・ミニマル・ホテルライクに合うものにしてください。
+- 色はベージュ、グレージュ、ライトグレー、アイボリーなど、室内に馴染む落ち着いた色を基本にしてください。
+- 柄は控えめで、派手すぎないものにしてください。
+- ラグは床に自然に接地させ、不自然に浮かせないこと。
+- ラグは通路を過度に邪魔しない位置にしてください。
+- ラグを敷いたことで部屋の形が変わって見えないようにしてください。
+
+==============================
+② 壁に絵を飾る
+==============================
+- 壁に絵を1点だけ自然に飾ってください。
+- 絵はシンプルで上品なアートにしてください。
+- テイストは北欧風・ミニマル・ホテルライクに合うものにしてください。
+- 派手すぎる色、強すぎる主張、奇抜なデザインは避けてください。
+- サイズは壁面に対して大きすぎず小さすぎない、自然なサイズにしてください。
+- 絵は壁に対してまっすぐ自然に飾ってください。
+- 窓、扉、収納、設備、スイッチ、コンセント類に干渉しない位置にしてください。
+- 壁に食い込んだり浮いたりせず、自然に設置されているようにしてください。
+- 既存の壁面構成を壊さず、広告用として好印象なワンポイント演出にしてください。
+
+==============================
+③ 観葉植物を2つ配置する
+==============================
+- 観葉植物を2つ配置してください。
+- 2つとも自然なサイズで、室内に対して大きすぎず小さすぎないものにしてください。
+- 1つは少し高さのある植物、もう1つはややコンパクトな植物など、バランスよく配置してください。
+- 鉢のデザインはシンプルで、北欧風・ミニマル・ホテルライクに合うものにしてください。
+- 植物は通路や扉の開閉、収納の使用、キッチンの使用を妨げない位置に配置してください。
+- 窓際、壁際、部屋のコーナーなど、自然に見える位置を選んでください。
+- 2つとも不自然に近すぎたり、同じ場所に密集しすぎたりしないようにしてください。
+- 空間のアクセントにはなるが、主張しすぎない配置にしてください。
+- 観葉植物によって部屋が狭く見えないようにしてください。
+
+--------------------------------------------------
+【全体のデザイン方針】
+
+- 全体のテイストは「北欧風」「ミニマル」「ホテルライク」を基調にすること。
+- SUUMO広告向けとして、万人受けしやすい、清潔感のある上品な見た目にすること。
+- 家具を消したことで空室感は出しつつ、ラグ・絵・観葉植物で少しだけ温かみと生活イメージを加えること。
+- 追加する要素は最小限にし、置きすぎないこと。
+- 「すっきり」「明るい」「整っている」「住みやすそう」に見えることを重視すること。
+- モデルルーム風だが、誇張しすぎない自然な演出にすること。
+
+--------------------------------------------------
+【絶対にやってはいけないこと】
+
+- 部屋の形を変える
+- 壁の位置を変える
+- 床面積を広げる
+- 天井高を変える
+- 窓や扉の位置・大きさを変える
+- キッチンや収納などの既存設備を消す
+- 壁紙や床材を別物に変える
+- 家具を消した後に、指定以外の大きな家具を追加する
+- ラグ、絵、植物を過剰に増やす
+- 不自然に豪華すぎる演出にする
+- 空室ではなく別の部屋のように見せる
+
+--------------------------------------------------
+【合成品質・自然さの条件】
+
+- 家具を消した箇所の補完は自然であること。
+- ラグ、絵、観葉植物のパース、向き、縮尺を室内空間に正しく合わせること。
+- 追加要素は床や壁に自然に接地・設置されているように見せること。
+- ラグが浮いたり、植物の鉢が床に沈んだり、絵が壁から浮いたりしないこと。
+- 光の方向、明るさ、影の濃さ、色温度を元画像に合わせること。
+- 追加した要素だけが不自然に鮮明、暗い、明るい状態にならないようにすること。
+- 全体として違和感のない自然な広告画像にすること。
+
+--------------------------------------------------
+【SUUMO広告用としての仕上がり基準】
+
+最終画像は、以下の条件を満たしてください。
+
+- 元画像と同じ部屋であることが明確に分かる
+- 部屋の形、大きさ、角度、構図が変わっていない
+- 窓、扉、キッチン、収納、設備などが正確に維持されている
+- 元々あった家具がすべて自然に消えている
+- 家具があった部分の床・壁・巾木などが自然に補完されている
+- ラグが1枚自然に敷かれている
+- 壁に絵が1点自然に飾られている
+- 観葉植物が2つ自然に配置されている
+- 置きすぎ感がなく、すっきり上品に見える
+- 清潔感があり、広告掲載に適した見た目になっている
+- 実物以上に広く見せるような誇張がない
+- SUUMO広告に掲載しても違和感のない、信頼感のある画像になっている
+
+--------------------------------------------------
+【最終確認】
+
+画像を生成する前に、以下を内部で確認してください。
+
+1. 部屋の形、大きさ、角度、構図を変えていないか
+2. カメラ位置や画角を変えていないか
+3. ズームやトリミングをしていないか
+4. 窓、扉、キッチン、収納、設備を消していないか
+5. 元々の家具をすべて正しく消しているか
+6. 家具があった場所の床や壁が自然に補完されているか
+7. ラグが1枚だけ自然に敷かれているか
+8. 壁に絵が1点だけ自然に飾られているか
+9. 観葉植物が2つ自然に配置されているか
+10. ラグ、絵、植物が通路や扉、キッチン使用を妨げていないか
+11. 追加要素のパース、接地、影が自然か
+12. SUUMO広告用として自然で信頼感のある画像になっているか
+
+上記をすべて満たしたうえで、説明文ではなく、室内画像の編集結果を生成してください。`;
 
 const DEFAULT_CFG = {
   model: "gpt-image-2",
@@ -180,19 +848,44 @@ const DEFAULT_CFG = {
   wmText: "東京マンション",
   wmColor: "#ffffff",
   wmOpacity: 0.15,
-  wmX: 0.62,
-  wmY: 0.5,
+  wmX: 0.7,
+  wmY: 0.75,
   wmFont: 0.06,
   skyPrompt: DEFAULT_SKY_PROMPT,
-  stagingPrompt: DEFAULT_STAGING_PROMPT,
+  furn1Prompt: DEFAULT_FURN1_PROMPT,
+  furn2Prompt: DEFAULT_FURN2_PROMPT,
+  furn3Prompt: DEFAULT_FURN3_PROMPT,
+  furnClearPrompt: DEFAULT_FURN_CLEAR_PROMPT,
 };
+
+const PROMPT_VERSION = 3;
 
 function loadCfg() {
   try {
     const saved = JSON.parse(localStorage.getItem("bukken_cfg") || "{}");
-    return { ...DEFAULT_CFG, ...saved };
+    // 旧設定の stagingPrompt があれば家具入れ①の初期値として引き継ぐ
+    if (!saved.furn1Prompt && saved.stagingPrompt) {
+      saved.furn1Prompt = saved.stagingPrompt;
+    }
+    // プロンプト更新時は保存済みの旧プロンプトを新しいデフォルトで上書きする
+    if (saved.promptVersion !== PROMPT_VERSION) {
+      delete saved.furn1Prompt;
+      delete saved.furn2Prompt;
+      delete saved.furn3Prompt;
+      delete saved.furnClearPrompt;
+      delete saved.stagingPrompt;
+      saved.promptVersion = PROMPT_VERSION;
+    }
+    const usedLegacySky = !saved.skyPrompt || LEGACY_SKY_PROMPTS.includes(saved.skyPrompt);
+    if ((saved.skyPromptRevision || 0) < SKY_PROMPT_REVISION && usedLegacySky) {
+      saved.skyPrompt = DEFAULT_SKY_PROMPT;
+      saved.skyPromptRevision = SKY_PROMPT_REVISION;
+    }
+    const merged = { ...DEFAULT_CFG, ...saved, promptVersion: PROMPT_VERSION, skyPromptRevision: SKY_PROMPT_REVISION };
+    localStorage.setItem("bukken_cfg", JSON.stringify(merged));
+    return merged;
   } catch {
-    return { ...DEFAULT_CFG };
+    return { ...DEFAULT_CFG, promptVersion: PROMPT_VERSION, skyPromptRevision: SKY_PROMPT_REVISION };
   }
 }
 function saveCfg(cfg) {
@@ -200,8 +893,28 @@ function saveCfg(cfg) {
 }
 
 let cfg = loadCfg();
-let files = []; // {file, tag, id}
+let files = []; // {file, tag, mainMode, id}
 let results = []; // {name, blob}
+
+const MAIN_MODE_LABELS = {
+  furn1: '家具入れ①',
+  furn2: '家具入れ➁',
+  furn3: '家具入れ③',
+  furnClear: '家具消し',
+};
+
+function getMainPrompt(mainMode) {
+  if (mainMode === 'furn2') return cfg.furn2Prompt;
+  if (mainMode === 'furn3') return cfg.furn3Prompt;
+  if (mainMode === 'furnClear') return cfg.furnClearPrompt;
+  return cfg.furn1Prompt;
+}
+
+function getProcessLabel(item) {
+  if (item.tag === 'main') return `メイン（${MAIN_MODE_LABELS[item.mainMode] || MAIN_MODE_LABELS.furn1}）`;
+  if (item.tag === 'sky') return '青空加工';
+  return 'そのまま';
+}
 
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
@@ -220,7 +933,7 @@ fileInput.addEventListener('change', () => addFiles(fileInput.files));
 function addFiles(list) {
   for (const f of list) {
     if (!f.type.startsWith('image/')) continue;
-    files.push({ file: f, tag: 'none', id: crypto.randomUUID() });
+    files.push({ file: f, tag: 'none', mainMode: 'furn1', id: crypto.randomUUID() });
   }
   renderGrid();
 }
@@ -231,6 +944,7 @@ function renderGrid() {
     const url = URL.createObjectURL(item.file);
     const div = document.createElement('div');
     div.className = 'thumb';
+    const mode = item.mainMode || 'furn1';
     div.innerHTML = `
       <img src="${url}">
       <div class="meta">
@@ -240,8 +954,21 @@ function renderGrid() {
           <label class="tag-sky"><input type="radio" name="tag-${item.id}" value="sky" ${item.tag==='sky'?'checked':''}><span>青空加工</span></label>
           <label class="tag-none"><input type="radio" name="tag-${item.id}" value="none" ${item.tag==='none'?'checked':''}><span>そのまま</span></label>
         </div>
+        <div class="subtagrow ${item.tag==='main'?'show':''}" data-sub="${item.id}">
+          <label class="tag-furn1"><input type="radio" name="mainMode-${item.id}" value="furn1" ${mode==='furn1'?'checked':''}><span>家具入れ①</span></label>
+          <label class="tag-furn2"><input type="radio" name="mainMode-${item.id}" value="furn2" ${mode==='furn2'?'checked':''}><span>家具入れ➁</span></label>
+          <label class="tag-furn3"><input type="radio" name="mainMode-${item.id}" value="furn3" ${mode==='furn3'?'checked':''}><span>家具入れ③</span></label>
+          <label class="tag-furn-clear"><input type="radio" name="mainMode-${item.id}" value="furnClear" ${mode==='furnClear'?'checked':''}><span>家具消し</span></label>
+        </div>
       </div>`;
-    div.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', () => { item.tag = r.value; }));
+    const subrow = div.querySelector('.subtagrow');
+    div.querySelectorAll('input[name="tag-' + item.id + '"]').forEach(r => r.addEventListener('change', () => {
+      item.tag = r.value;
+      subrow.classList.toggle('show', item.tag === 'main');
+    }));
+    div.querySelectorAll('input[name="mainMode-' + item.id + '"]').forEach(r => r.addEventListener('change', () => {
+      item.mainMode = r.value;
+    }));
     div.querySelector('.remove-btn').addEventListener('click', () => { files = files.filter(x => x.id !== item.id); renderGrid(); });
     fileGrid.appendChild(div);
   }
@@ -252,25 +979,6 @@ function renderGrid() {
 function log(msg) {
   logEl.textContent += (logEl.textContent ? '\n' : '') + msg;
   logEl.scrollTop = logEl.scrollHeight;
-}
-
-async function callAiEdit(file, prompt) {
-  const fd = new FormData();
-  fd.append('image', file, file.name);
-  fd.append('prompt', prompt);
-  fd.append('model', cfg.model);
-  const res = await fetch('/api/ai-edit', { method: 'POST', body: fd });
-  const contentType = res.headers.get('content-type') || '';
-  if (!contentType.includes('application/json')) {
-    // /api/ai-edit が呼ばれず、Netlifyの404ページ等が返ってきているケース
-    throw new Error(`AI加工エンドポイントに到達できませんでした(status ${res.status})。Edge Functionが未デプロイの可能性があります。`);
-  }
-  const data = await res.json();
-  if (!res.ok || data.error) {
-    const debugStr = data.debug ? ` [debug: ${JSON.stringify(data.debug)}]` : '';
-    throw new Error((data.error || `HTTP ${res.status}`) + debugStr);
-  }
-  return data.b64_json;
 }
 
 function loadImage(src) {
@@ -289,6 +997,49 @@ function fileToDataUrl(file) {
     r.onerror = reject;
     r.readAsDataURL(file);
   });
+}
+
+async function prepareAiImage(file) {
+  const dataUrl = await fileToDataUrl(file);
+  const img = await loadImage(dataUrl);
+  const maxSide = 1536;
+  const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(img.width * scale));
+  canvas.height = Math.max(1, Math.round(img.height * scale));
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(b => (b ? resolve(b) : reject(new Error('画像の縮小に失敗しました'))), 'image/jpeg', 0.9);
+  });
+  return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+}
+
+async function callAiEdit(file, prompt) {
+  const prepared = await prepareAiImage(file);
+  const fd = new FormData();
+  fd.append('image', prepared, prepared.name);
+  fd.append('prompt', prompt);
+  fd.append('model', cfg.model);
+  fd.append('quality', 'medium');
+  const res = await fetch('/api/ai-edit', { method: 'POST', body: fd });
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const text = await res.text();
+    if (/timed?\s*out/i.test(text) || res.status === 504) {
+      throw new Error('AI加工が時間切れになりました。もう一度お試しください。');
+    }
+    throw new Error(`AI加工エンドポイントに到達できませんでした(status ${res.status})。Edge Functionが未デプロイの可能性があります。`);
+  }
+  const data = await res.json();
+  if (data.error) {
+    const debugStr = data.debug ? ` [debug: ${JSON.stringify(data.debug)}]` : '';
+    throw new Error(data.error + debugStr);
+  }
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return data.b64_json;
 }
 
 function drawCover(ctx, img, dw, dh) {
@@ -311,7 +1062,7 @@ function ensureFontsReady() {
   if (!fontsReadyPromise) {
     fontsReadyPromise = Promise.race([
       Promise.all([
-        document.fonts.load('500 40px "M PLUS Rounded 1c"'),
+        document.fonts.load('700 40px "Noto Serif JP"'),
         document.fonts.ready,
       ]),
       new Promise(resolve => setTimeout(resolve, 1500)), // フォント読み込みが遅い場合のフォールバック
@@ -323,7 +1074,7 @@ function ensureFontsReady() {
 function drawWatermark(ctx, width, height) {
   const fontSize = Math.round(height * cfg.wmFont);
   ctx.save();
-  ctx.font = `500 ${fontSize}px "M PLUS Rounded 1c", "Zen Maru Gothic", "Hiragino Maru Gothic ProN", "Yu Gothic", sans-serif`;
+  ctx.font = `700 ${fontSize}px "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif`;
   ctx.fillStyle = hexToRgba(cfg.wmColor, cfg.wmOpacity);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -340,7 +1091,8 @@ async function finishImage(img, name) {
   canvas.width = cfg.width;
   canvas.height = cfg.height;
   const ctx = canvas.getContext('2d');
-  drawCover(ctx, img, cfg.width, cfg.height);
+  // 余白を切り取らず、元画像全体をそのまま指定サイズへリサイズする
+  ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, cfg.width, cfg.height);
   drawWatermark(ctx, cfg.width, cfg.height);
   return new Promise(resolve => canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.92));
 }
@@ -357,12 +1109,12 @@ processBtn.addEventListener('click', async () => {
   let failCount = 0;
 
   for (const item of files) {
-    const label = item.tag === 'main' ? 'ホームステージング' : item.tag === 'sky' ? '青空加工' : 'そのまま';
+    const label = getProcessLabel(item);
     log(`${item.file.name}: ${label} 処理中…`);
     let sourceImg;
     try {
       if (item.tag === 'main' || item.tag === 'sky') {
-        const prompt = item.tag === 'main' ? cfg.stagingPrompt : cfg.skyPrompt;
+        const prompt = item.tag === 'main' ? getMainPrompt(item.mainMode) : cfg.skyPrompt;
         const b64 = await callAiEdit(item.file, prompt);
         sourceImg = await loadImage(`data:image/png;base64,${b64}`);
         log(`${item.file.name}: ${label} 完了`);
@@ -385,7 +1137,7 @@ processBtn.addEventListener('click', async () => {
 
   if (failCount > 0) {
     warnBanner.style.display = 'block';
-    warnBanner.textContent = `⚠ ${failCount}枚でAI加工が失敗し、元画像のまま処理されました。上のログにエラー内容が出ています。「Edge Functionが未デプロイ」と出ている場合は、Netlify CLIまたはGit連携でのデプロイが必要です(ドラッグ&ドロップ配布ではAI加工機能が動きません)。`;
+    warnBanner.textContent = `⚠ ${failCount}枚でAI加工が失敗し、元画像のまま処理されました。上のログにエラー内容が出ています。`;
   }
 
   showResults();
@@ -435,7 +1187,10 @@ function openSettings() {
   document.getElementById('cfgWmY').value = cfg.wmY;
   document.getElementById('cfgWmFont').value = cfg.wmFont;
   document.getElementById('cfgSkyPrompt').value = cfg.skyPrompt;
-  document.getElementById('cfgStagingPrompt').value = cfg.stagingPrompt;
+  document.getElementById('cfgFurn1Prompt').value = cfg.furn1Prompt;
+  document.getElementById('cfgFurn2Prompt').value = cfg.furn2Prompt;
+  document.getElementById('cfgFurn3Prompt').value = cfg.furn3Prompt;
+  document.getElementById('cfgFurnClearPrompt').value = cfg.furnClearPrompt;
   modal.style.display = 'flex';
 }
 
@@ -451,7 +1206,12 @@ document.getElementById('saveSettings').addEventListener('click', () => {
     wmY: parseFloat(document.getElementById('cfgWmY').value),
     wmFont: parseFloat(document.getElementById('cfgWmFont').value),
     skyPrompt: document.getElementById('cfgSkyPrompt').value || DEFAULT_SKY_PROMPT,
-    stagingPrompt: document.getElementById('cfgStagingPrompt').value || DEFAULT_STAGING_PROMPT,
+    furn1Prompt: document.getElementById('cfgFurn1Prompt').value || DEFAULT_FURN1_PROMPT,
+    furn2Prompt: document.getElementById('cfgFurn2Prompt').value || DEFAULT_FURN2_PROMPT,
+    furn3Prompt: document.getElementById('cfgFurn3Prompt').value || DEFAULT_FURN3_PROMPT,
+    furnClearPrompt: document.getElementById('cfgFurnClearPrompt').value || DEFAULT_FURN_CLEAR_PROMPT,
+    promptVersion: PROMPT_VERSION,
+    skyPromptRevision: SKY_PROMPT_REVISION,
   };
   if (Number.isNaN(cfg.wmOpacity)) cfg.wmOpacity = DEFAULT_CFG.wmOpacity;
   if (Number.isNaN(cfg.wmX)) cfg.wmX = DEFAULT_CFG.wmX;
